@@ -32,14 +32,15 @@ jobs:
           GOARCH: ${{ matrix.goarch }}
           CGO_ENABLED: 0
         run: |
-          BINARY_NAME=myapp
+          BINARY_NAME=bilinovel-downloader
           if [ "${{ matrix.goos }}" = "windows" ]; then
             BINARY_NAME="${BINARY_NAME}.exe"
           fi
+          mkdir "${BINARY_NAME}-${{ matrix.goos }}-${{ matrix.goarch }}"
           go build -o "${BINARY_NAME}-${{ matrix.goos }}-${{ matrix.goarch }}" ./...
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: bilinovel-downloader-${{ matrix.goos }}-${{ matrix.goarch }}
-          path: myapp-${{ matrix.goos }}-${{ matrix.goarch }}*
+          path: bilinovel-downloader-${{ matrix.goos }}-${{ matrix.goarch }}*
