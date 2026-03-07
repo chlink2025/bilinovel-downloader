@@ -599,31 +599,47 @@ func (b *Bilinovel) processContentWithPlaywright(page playwright.Page, htmlConte
 		return "", fmt.Errorf("could not wait for #acontent: %w", err)
 	}
 
-	// 遍历所有 #acontent 的子元素, 通过 window.getComputedStyle().display 检测是否是 none, 如果是 none 则从页面删除这个元素
 	result, err := page.Evaluate(`
 		(function() {
-			const acontent = document.getElementById('acontent');
-			if (!acontent) {
-				return 'acontent element not found';
-			}
+			const container = document.getElementById('acontent');
+			if (!container) return 'not found';
+
+			// 1. 抓取所有内容块（包括文字 p 和图片 img/div）
+			const elements = Array.from(container.children);
 			
-			let removedCount = 0;
-			const elements = acontent.querySelectorAll('*');
-			
-			// 从后往前遍历，避免删除元素时影响索引
-			for (let i = elements.length - 1; i >= 0; i--) {
-				const element = elements[i];
-				const computedStyle = window.getComputedStyle(element);
+			const visibleElements = [];
+			elements.forEach(el => {
+				const style = window.getComputedStyle(el);
+				const isHidden = style.display === 'none' || 
+								style.transform === 'matrix(0, 0, 0, 0, 0, 0)' ||
+								(el.tagName !== 'IMG' && el.offsetHeight === 0);
 				
-				if (computedStyle.display === 'none' || computedStyle.transform == 'matrix(0, 0, 0, 0, 0, 0)') {
-					element.remove();
-					removedCount++;
+				if (isHidden) {
+					el.remove();
+				} else {
+					// 确保图片地址已加载，方便后续 goquery 处理
+					if (el.tagName === 'IMG' && el.getAttribute('data-src')) {
+						el.src = el.getAttribute('data-src');
+					}
+					visibleElements.push(el);
 				}
-			}
-			
-			return 'Removed ' + removedCount + ' hidden elements';
+			});
+
+			// 2. 核心排序：按视觉上的垂直高度(top)重新排列
+			visibleElements.sort((a, b) => {
+				const rectA = a.getBoundingClientRect();
+				const rectB = b.getBoundingClientRect();
+				return rectA.top - rectB.top;
+			});
+
+			// 3. 物理重排 DOM 顺序
+			container.innerHTML = ''; 
+			visibleElements.forEach(el => container.appendChild(el));
+
+			return 'Fixed ' + visibleElements.length + ' elements (Text + Images)';
 		})()
 	`)
+	// ... 之后的代码 ...
 
 	if err != nil {
 		return "", fmt.Errorf("failed to remove hidden elements: %w", err)
