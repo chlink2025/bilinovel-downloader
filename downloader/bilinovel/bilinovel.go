@@ -38,6 +38,7 @@ type Bilinovel struct {
 	browser        playwright.Browser
 	browserContext playwright.BrowserContext
 	pages          map[string]playwright.Page
+	pagesMu        sync.RWMutex
 	concurrency    int
 	concurrentChan chan any
 
@@ -331,10 +332,12 @@ func (b *Bilinovel) getAllVolumes(novelId int, skipChapterContent bool, skipVolu
 
 			// 关闭浏览器标签页
 			pwPageKey := fmt.Sprintf("%v-%v", novelId, volumeId)
+			b.pagesMu.Lock()
 			if pwPage, ok := b.pages[pwPageKey]; ok {
 				_ = pwPage.Close()
 				delete(b.pages, pwPageKey)
 			}
+			b.pagesMu.Unlock()
 
 			mu.Lock()
 			volumes[i] = volume
@@ -367,14 +370,25 @@ func (b *Bilinovel) GetChapter(novelId int, volumeId int, chapterId int) (*model
 	}
 	for {
 		pwPageKey := fmt.Sprintf("%v-%v", novelId, volumeId)
-		if _, ok := b.pages[pwPageKey]; !ok {
+		b.pagesMu.RLock()
+		_, exists := b.pages[pwPageKey]
+		b.pagesMu.RUnlock()
+		
+		if !exists {
 			pwPage, err := b.browserContext.NewPage()
 			if err != nil {
 				return nil, fmt.Errorf("failed to create browser page: %w", err)
 			}
+			b.pagesMu.Lock()
 			b.pages[pwPageKey] = pwPage
+			b.pagesMu.Unlock()
 		}
-		hasNext, err := b.getChapterByPage(b.pages[pwPageKey], chapter, pageNum)
+		
+		b.pagesMu.RLock()
+		page := b.pages[pwPageKey]
+		b.pagesMu.RUnlock()
+		
+		hasNext, err := b.getChapterByPage(page, chapter, pageNum)
 		if err != nil {
 			return nil, fmt.Errorf("failed to download chapter: %w", err)
 		}
